@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from PIL import Image
+import pytesseract
+import io
 
 # --- Function to get real-time HNI subscription data from Chittorgarh using pandas fallback ---
 def get_live_hni_subscription():
@@ -65,7 +68,7 @@ lot_range = list(range(2, 26))
 
 st.markdown("---")
 
-# --- Dynamic Prediction (not dependent on limited training data) ---
+# --- Dynamic Prediction ---
 st.subheader(f"Est. Allotment Odds for: {selected_name}")
 
 results = []
@@ -73,7 +76,7 @@ for lots in lot_range:
     capital = lots * 80000
     if capital > user_capital:
         continue
-    base_factor = 2.5  # tuning parameter to scale HNI subs per slab
+    base_factor = 2.5
     expected_applicants = subs * base_factor * lots
     prob = min(1.0, 1 / expected_applicants)
     expected_shares = prob * 200
@@ -91,6 +94,19 @@ for lots in lot_range:
 
 out_df = pd.DataFrame(results)
 st.dataframe(out_df.style.format({"Capital (₹)": "₹{:,.0f}", "₹ per Expected Share": "₹{:,.0f}"}))
+
+# --- Upload BoA Section ---
+st.subheader("📂 Upload BoA Screenshot (Optional)")
+uploaded_file = st.file_uploader("Upload image containing HNI allotment table (JPG/PNG)", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    st.image(image, caption="Uploaded BoA Image", use_column_width=True)
+
+    with st.spinner("Extracting data with OCR..."):
+        text = pytesseract.image_to_string(image)
+    st.text_area("OCR Output (Raw)", text, height=300)
+    st.info("You can now extract key BoA values from this text manually or in future, auto-parse it.")
 
 # Historical returns section
 st.subheader("Historical IPO Listing Gains")
