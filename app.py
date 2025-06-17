@@ -3,28 +3,23 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
-# --- Function to get real-time HNI subscription data from Chittorgarh ---
+# --- Function to get real-time HNI subscription data from Chittorgarh using pandas fallback ---
 def get_live_hni_subscription():
     try:
         url = "https://www.chittorgarh.com/report/latest-sme-ipo-subscription-live/85/"
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-        table = soup.find("table")
-        rows = table.find_all("tr")
-
+        tables = pd.read_html(url)
+        df = tables[0]
         ipo_data = []
-        for row in rows[1:]:
-            cols = row.find_all("td")
-            if len(cols) >= 6:
-                ipo_name = cols[0].get_text(strip=True)
-                hni_subscription = cols[2].get_text(strip=True)
-                if hni_subscription.replace('.', '', 1).isdigit():
-                    ipo_data.append((ipo_name, float(hni_subscription)))
+        for _, row in df.iterrows():
+            try:
+                ipo_data.append((row["IPO Name"], float(row["NII"].split()[0])))
+            except:
+                continue
         return ipo_data
-    except Exception as e:
+    except:
         return []
 
-# --- Function to get GMP data from IPOWatch (placeholder using static sample) ---
+# --- Function to get GMP data ---
 def get_dummy_gmp_data():
     return {
         "Delta Autocorp": 45,
@@ -32,17 +27,16 @@ def get_dummy_gmp_data():
         "CapitalNumbers": 60
     }
 
-# --- Load training data ---
-data = [
-    {"IPO": "Delta Autocorp", "Lots": 2, "Applicants": 43, "Ratio": "1:43"},
-    {"IPO": "Delta Autocorp", "Lots": 10, "Applicants": 6, "Ratio": "1:2"},
-    {"IPO": "Rikhav Securities", "Lots": 2, "Applicants": 122, "Ratio": "1:122"},
-    {"IPO": "Rikhav Securities", "Lots": 10, "Applicants": 6, "Ratio": "1:5"},
-    {"IPO": "CapitalNumbers", "Lots": 2, "Applicants": 110, "Ratio": "1:110"},
-    {"IPO": "CapitalNumbers", "Lots": 10, "Applicants": 6, "Ratio": "1:6"}
-]
-df = pd.DataFrame(data)
-df["Probability"] = df["Ratio"].apply(lambda x: round(eval(x.replace(":", "/")), 4))
+# --- Function to map probability to confidence zone ---
+def confidence_zone(prob):
+    if prob >= 0.5:
+        return "🟢 High"
+    elif prob >= 0.2:
+        return "🟡 Medium"
+    elif prob > 0:
+        return "🔴 Low"
+    else:
+        return "⚪ None"
 
 # --- Streamlit App ---
 st.title("📊 SME IPO HNI Allotment Predictor")
@@ -52,7 +46,7 @@ st.subheader("Live SME IPOs")
 live_data = get_live_hni_subscription()
 gmp_data = get_dummy_gmp_data()
 selected_ipo = None
-subs = 100.0  # default fallback
+subs = 100.0
 
 if live_data:
     ipo_names = [f"{name} ({sub}x HNI)" for name, sub in live_data]
@@ -71,32 +65,32 @@ lot_range = list(range(2, 26))
 
 st.markdown("---")
 
-# Filter historical data for selected IPO
-ipo_df = df[df["IPO"] == selected_name]
-if not ipo_df.empty:
-    st.subheader(f"Prediction for: {selected_name}")
-    results = []
-    for lots in lot_range:
-        capital = lots * 80000
-        if capital > user_capital:
-            continue
-        subset = ipo_df[ipo_df["Lots"] == lots]
-        prob = subset["Probability"].mean() if not subset.empty else 1 / (lots * 10)
-        expected_shares = prob * 200
-        efficiency = capital / expected_shares if expected_shares else None
+# --- Dynamic Prediction (not dependent on limited training data) ---
+st.subheader(f"Est. Allotment Odds for: {selected_name}")
 
-        results.append({
-            "Lots Applied": lots,
-            "Est. Allotment %": round(prob * 100, 2),
-            "Capital (₹)": capital,
-            "Expected Shares": round(expected_shares, 2),
-            "₹ per Expected Share": round(efficiency, 2) if efficiency else None
-        })
+results = []
+for lots in lot_range:
+    capital = lots * 80000
+    if capital > user_capital:
+        continue
+    base_factor = 2.5  # tuning parameter to scale HNI subs per slab
+    expected_applicants = subs * base_factor * lots
+    prob = min(1.0, 1 / expected_applicants)
+    expected_shares = prob * 200
+    efficiency = capital / expected_shares if expected_shares else None
+    zone = confidence_zone(prob)
 
-    out_df = pd.DataFrame(results)
-    st.dataframe(out_df.style.format({"Capital (₹)": "₹{:,.0f}", "₹ per Expected Share": "₹{:,.0f}"}))
-else:
-    st.warning(f"No historical allotment data available yet for **{selected_name}**. Please check back later.")
+    results.append({
+        "Lots Applied": lots,
+        "Est. Allotment %": round(prob * 100, 2),
+        "Confidence": zone,
+        "Capital (₹)": capital,
+        "Expected Shares": round(expected_shares, 2),
+        "₹ per Expected Share": round(efficiency, 2) if efficiency else None
+    })
+
+out_df = pd.DataFrame(results)
+st.dataframe(out_df.style.format({"Capital (₹)": "₹{:,.0f}", "₹ per Expected Share": "₹{:,.0f}"}))
 
 # Historical returns section
 st.subheader("Historical IPO Listing Gains")
