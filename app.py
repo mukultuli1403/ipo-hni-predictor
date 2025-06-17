@@ -2,9 +2,6 @@ import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-from PIL import Image
-import pytesseract
-import io
 
 # --- Function to get real-time HNI subscription data from Chittorgarh using pandas fallback ---
 def get_live_hni_subscription():
@@ -95,18 +92,9 @@ for lots in lot_range:
 out_df = pd.DataFrame(results)
 st.dataframe(out_df.style.format({"Capital (₹)": "₹{:,.0f}", "₹ per Expected Share": "₹{:,.0f}"}))
 
-# --- Upload BoA Section ---
-st.subheader("📂 Upload BoA Screenshot (Optional)")
-uploaded_file = st.file_uploader("Upload image containing HNI allotment table (JPG/PNG)", type=["jpg", "jpeg", "png"])
-
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
-    st.image(image, caption="Uploaded BoA Image", use_column_width=True)
-
-    with st.spinner("Extracting data with OCR..."):
-        text = pytesseract.image_to_string(image)
-    st.text_area("OCR Output (Raw)", text, height=300)
-    st.info("You can now extract key BoA values from this text manually or in future, auto-parse it.")
+# --- OCR/BoA Section Disabled ---
+st.subheader("📂 BoA Image Upload (Disabled on Streamlit Cloud)")
+st.info("Due to platform limitations, image upload + OCR is disabled here. Run locally to use it.")
 
 # Historical returns section
 st.subheader("Historical IPO Listing Gains")
